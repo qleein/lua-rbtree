@@ -5,15 +5,13 @@ local ffi_cast = ffi.cast
 local ffi_fill = ffi.fill
 local setmetatable = setmetatable
 local tonumber = tonumber
+local assert = assert
 local RED = 1
 local BLACK = 0
 
 
 local _M = { version = 1.0 }
-
 local mt = { __index = _M }
-
-
 
 
 ffi.cdef[[
@@ -29,18 +27,34 @@ ffi.cdef[[
     };
 ]]
 
+
 local uintptr_t = ffi.typeof("uintptr_t")
 local NULL = ffi.NULL
 
 
 local function array_init(size)
+    if not size then
+        return nil, "size not number"
+    end
+
+    size = tonumber(size)
+    if size <= 0 then
+        return nil, "size too small"
+    end
+    
+    if size > 1048576 then
+        return nil, "size too large"
+    end
+
+    -- q[0].parent points to root node
+    -- q[0].right points to next free node
+    -- q[0].left points to last free node
+    -- q[1] sentinel node
     local q = ffi_new("rbtree_node[?]", size + 2)
     ffi_fill(q, ffi_sizeof("rbtree_node", size + 2), 0)
 
-
     local sentinel = q[1]
-    q[1].color = BLACK
-
+    sentinel.color = BLACK
 
     local prev = q[0]
     for i = 2, size + 1 do
@@ -80,8 +94,9 @@ local function queue_insert_head(head, node)
     node.left = head
     head.right = node
     n.left = node
-end
 
+    return
+end
 
 
 local function ptr2num(ptr)
@@ -90,7 +105,20 @@ end
 
 
 local function rbtree_min(node, sentinel)
+    --[[
+    --This code could not get the minium node,
+    --Maybe there is some bugs,
+    --if use jit.off(),It would ok.
     while node.left ~= sentinel do
+        node = node.left
+    end
+
+    ]]--
+
+    while true do
+        if node.left == sentinel then
+            break
+        end
         node = node.left
     end
 
@@ -99,9 +127,7 @@ end
 
 
 local function rbtree_left_rotate(array, sentinel, node)
-    local temp
-
-    temp = node.right
+    local temp = node.right
     node.right = temp.left
 
     if temp.left ~= sentinel then
@@ -111,8 +137,10 @@ local function rbtree_left_rotate(array, sentinel, node)
     temp.parent = node.parent
     if node == array[0].parent then
         array[0].parent = temp
+
     elseif node == node.parent.left then
         node.parent.left = temp
+
     else
         node.parent.right = temp
     end
@@ -131,12 +159,13 @@ local function rbtree_right_rotate(array, sentinel, node)
         temp.right.parent = node
     end
 
-
     temp.parent = node.parent
     if node == array[0].parent then
         array[0].parent = temp
+
     elseif node == node.parent.left then
         node.parent.left = temp
+
     else
         node.parent.right = temp
     end
@@ -146,11 +175,13 @@ local function rbtree_right_rotate(array, sentinel, node)
     return
 end
 
+
 local function rbtree_insert_value(temp, node, sentinel)
     local p
     while true do
         if node.key < temp.key then
             p = temp.left
+
         else
             p = temp.right
         end
@@ -164,6 +195,7 @@ local function rbtree_insert_value(temp, node, sentinel)
 
     if node.key < temp.key then
         temp.left = node
+
     else
         temp.right = node
     end
@@ -172,6 +204,7 @@ local function rbtree_insert_value(temp, node, sentinel)
     node.left = sentinel
     node.right = sentinel
     node.color = RED
+    return
 end
 
 
@@ -190,14 +223,14 @@ local function rbtree_insert(array, node, insert)
 
     insert(root, node, sentinel)
     -- re-balance tree
-    while node ~= array[0].parent and node.parent.color == 1 do
+    while node ~= array[0].parent and node.parent.color == RED do
         if node.parent == node.parent.parent.left then
             local temp = node.parent.parent.right
 
-            if temp.color == 1 then
+            if temp.color == RED then
                 node.parent.color = BLACK
                 temp.color = BLACK
-                node.parent.parent.color = BLACK
+                node.parent.parent.color = RED
                 node = node.parent.parent
 
             else
@@ -244,41 +277,15 @@ local function rbtree_delete(array, node)
     if node.left == sentinel then
         temp = node.right
         subst = node
+
     elseif node.right == sentinel then
         temp = node.left
         subst = node
     else
-        --print('right:', node.right)
-        --subst = rbtree_min(node.right, sentinel)
-        subst = node.right
-      --  while subst.left ~= sentinel do
-        --    print('2subst:', subst)
-            --[[
-            print('2subst.left:', subst.left)
-            print('2subst.right:', subst.right)
-            print('2sentinel:', sentinel)
-            ]]--
-          --  subst = subst.left
-        --end
-        while true do
-            if subst.left == sentinel then
-                break
-            else
-                subst = subst.left
-            end
-        end
 
-        if subst.left ~= sentinel then
-            print('subst:', subst)
-            print('subst.left:', subst.left)
-            print('subst.right:', subst.right)
-            print('sentinel:', sentinel)
-            print('Never got here2')
-            temp = subst.left
-            
-        else
-            temp = subst.right
-        end
+        subst = rbtree_min(node.right, sentinel)
+        assert(subst.left == sentinel)
+        temp = subst.right
     end
 
     if subst == array[0].parent then
@@ -325,6 +332,7 @@ local function rbtree_delete(array, node)
         else
             if node == node.parent.left then
                 node.parent.left = subst
+
             else
                 node.parent.right = subst
             end
@@ -393,13 +401,13 @@ local function rbtree_delete(array, node)
             end
 
             if w.left.color == BLACK and w.right.color == BLACK then
-                w.color = REd
+                w.color = RED
                 temp = temp.parent
             
             else
                 if w.left.color == BLACK then
                     w.right.color = BLACK
-                    w.color = REd
+                    w.color = RED
                     rbtree_left_rotate(array, sentinel, w)
                     w = temp.parent.left
                 end
@@ -418,6 +426,7 @@ local function rbtree_delete(array, node)
 end
 
 
+--for debug only
 local function traverse(array, size)
     for i = 0, size + 1 do
         print('i:', i, ' node:', array[i], ' nodekey:', array[i].key, ' node.parent:', array[i].parent, ' node.left:', array[i].left, ' node.right:', array[i].right, ' color:', array[i].color)
@@ -429,8 +438,10 @@ local function rbtree_find(node, key, sentinel)
     while node ~= sentinel do
         if key < node.key then
             node = node.left
+
         elseif key > node.key then
             node = node.right
+
         else
             return node
         end
@@ -463,15 +474,15 @@ function _M.find(self, key)
     while node ~= sentinel do
         if key < node.key then
             node = node.left
+
         elseif key > node.key then
             node = node.right
+
         else
             local values = self.node2value
             local index = ptr2num(node)
             local value = values[index]
-            if not value then
-                print('value wrong:', value)
-            end
+            assert(value)
             return value
         end
     end
@@ -485,10 +496,10 @@ function _M.insert(self, key, value)
     local array = self.array
     local values = self.node2value
 
-    local node = queue_remove_head(array[0])
+    --TODO  array grow  dynamic
+    local node, err = queue_remove_head(array[0])
     if not node then
-        print('Full')
-        return nil
+        return nil, err
     end
 
     values[ptr2num(node)] = value
@@ -504,23 +515,7 @@ function _M.delete(self, key)
     local sentinel = array[1]
     local node = rbtree_find(array[0].parent, key, sentinel)
     if not node then
-        print('node not found, key:', key)
-        local root = array[0].parent
-        while root ~= sentinel do
-            if key < root.key then
-                root = root.left
-            elseif key > root.key then
-                root = root.right
-            else
-                break
-            end
-            print('key:', root.key)
-        end
-
-        print('res of find after:', self.find(self, key))
-        traverse(array, self.size)
-
-        return nil
+        return nil, "not exist"
     end
 
     rbtree_delete(array, node)
@@ -530,6 +525,7 @@ function _M.delete(self, key)
 end
 
 
+--for debug 
 function _M.all(self)
     traverse(self.array, self.size)
 end
