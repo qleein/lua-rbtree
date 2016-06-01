@@ -530,4 +530,17 @@ function _M.all(self)
     traverse(self.array, self.size)
 end
 
+
+function _M.min(self)
+    local array = self.array
+    local sentinel = array[1]
+    local root = array[0].parent
+    if root == sentinel then
+        return nil
+    else
+        return rbtree_node(root, sentinel)
+    end
+end
+
+
 return _M
