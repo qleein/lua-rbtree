@@ -538,7 +538,7 @@ function _M.min(self)
     if root == sentinel then
         return nil
     else
-        return rbtree_node(root, sentinel)
+        return rbtree_min(root, sentinel)
     end
 end
 
